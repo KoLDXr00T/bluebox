@@ -202,7 +202,7 @@ construction, so nothing a sandbox does with its name can reach outside
 | `bluebox reset <name>` | empty `/data`, keeping the sandbox |
 | `bluebox snapshot <name> [label]` | archive `/data` under a name; `-l` lists archives |
 | `bluebox restore <name> [snap]` | replace `/data` from a snapshot (newest by default) |
-| `bluebox rename <old> <new>` | rename, keeping data, logs and the built image |
+| `bluebox rename <old> <new>` | rename, keeping data, logs, snapshots and the built image |
 | `bluebox destroy <name> [--data]` | remove a sandbox; `--data` also deletes `/data` |
 | `bluebox nuke [--no-data]` | remove every sandbox; `--no-data` keeps data |
 
