@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"bluebox/internal/bluefile"
+	"bluebox/internal/sandbox"
 )
 
 // vmArgs builds every -v in one place, so the declarative mounts from the
@@ -53,5 +54,27 @@ func TestVmArgsWithoutMounts(t *testing.T) {
 	}
 	if !strings.HasSuffix(data, ":/data") {
 		t.Errorf("expected exactly the /data mount, got %q", data)
+	}
+}
+
+// The sandbox image is only ever the locally built one: a missing image must
+// fail rather than be resolved and pulled from a registry.
+func TestVmArgsNeverPulls(t *testing.T) {
+	t.Setenv("BLUEBOX_HOME", t.TempDir())
+	args, err := vmArgs("devbox", bluefile.Default, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, a := range args {
+		if a == "--pull=never" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("vmArgs must pass --pull=never, got %v", args)
+	}
+	if tag := sandbox.ImageTag("devbox"); !strings.HasPrefix(tag, "localhost/") {
+		t.Errorf("ImageTag %q is a short name, so podman may resolve it against a registry", tag)
 	}
 }
