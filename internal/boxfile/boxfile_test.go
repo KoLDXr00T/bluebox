@@ -362,3 +362,13 @@ func TestIsolation(t *testing.T) {
 		}
 	}
 }
+
+// The YAML library panics on a bare tag where a list is expected; Parse must
+// turn that into an error. Found by FuzzParse.
+func TestParseSurvivesYAMLPanic(t *testing.T) {
+	for _, body := range []string{"base: alpine\npackages: !\n", "base: alpine\npackages:\n  ! 0\n"} {
+		if _, err := Parse(write(t, body)); err == nil {
+			t.Errorf("Parse(%q) should fail", body)
+		}
+	}
+}

@@ -160,8 +160,7 @@ func Parse(path string) (Spec, error) {
 	// Decoding empty input clears the destination, wiping the defaults, so
 	// skip it entirely: a Boxfile with no content means "all defaults".
 	if len(bytes.TrimSpace(b)) > 0 {
-		dec := yaml.NewDecoder(bytes.NewReader(b), yaml.DisallowUnknownField())
-		if err := dec.Decode(&s); err != nil && !errors.Is(err, io.EOF) {
+		if err := decode(b, &s); err != nil {
 			return Spec{}, fmt.Errorf("%s: %w", path, err)
 		}
 	}
@@ -169,6 +168,22 @@ func Parse(path string) (Spec, error) {
 		return Spec{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return s, nil
+}
+
+// decode reads YAML into s. The YAML library panics on some malformed input
+// (a bare "!" tag on a list, for one), so a panic is reported as a parse
+// error rather than taking down box, or a server, with it.
+func decode(b []byte, s *Spec) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("cannot parse: %v", r)
+		}
+	}()
+	dec := yaml.NewDecoder(bytes.NewReader(b), yaml.DisallowUnknownField())
+	if err := dec.Decode(s); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
 }
 
 // Grammar rules for spec fields that are data, not instructions. A value

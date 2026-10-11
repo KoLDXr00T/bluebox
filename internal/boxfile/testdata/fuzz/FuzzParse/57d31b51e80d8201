@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte(" \n\nbase: .\n\n\nram_mib: 1\nnetwork: A\n\nA: false #\nisolation: A #\nbackend: A #\ntimeout_seconds: A    #\nwarm: 0 #\n\n#\npackages:\n  ! 0000000000000")
