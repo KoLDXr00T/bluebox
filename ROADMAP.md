@@ -18,7 +18,7 @@ no dates.
 
 - **v0.5, sandboxes isolated from each other:** a UID per strict sandbox
   ([#27], done), `box inspect --security-report` ([#28], done), `backend: auto` ([#29], done),
-  cross-sandbox escape tests ([#30]), a `/data` size limit ([#10]), the nightly
+  cross-sandbox escape tests ([#30]), a `/data` size limit ([#10], done), the nightly
   escape suite running again ([#31]).
 - **v0.6, network policy:** egress allowlists through a forced proxy ([#7]), a
   connection log ([#8]), networking for Firecracker ([#32]).
@@ -26,7 +26,8 @@ no dates.
   runs ([#34]).
 - **v0.8, supply chain and robustness:** builds inside a VM ([#35]), signed
   releases ([#36]), pinned images ([#37]), more fuzzing ([#38]), fault and soak
-  tests ([#39]), benchmarks under concurrency ([#40]).
+  tests ([#39]), benchmarks under concurrency ([#40]), an in-guest process limit
+  ([#53]).
 - **v0.9, platforms and interfaces:** macOS through Lima ([#41]), a gRPC API
   ([#42]), packages and published SDKs ([#43]), logs and metrics ([#44]), a
   fuller guest kernel for Kubernetes ([#9]).
@@ -62,4 +63,5 @@ no dates.
 [#45]: https://github.com/chxperiments/box/issues/45
 [#46]: https://github.com/chxperiments/box/issues/46
 [#48]: https://github.com/chxperiments/box/issues/48
+[#53]: https://github.com/chxperiments/box/issues/53
 [#49]: https://github.com/chxperiments/box/issues/49
