@@ -17,7 +17,7 @@ no dates.
 ## Next
 
 - **v0.5, sandboxes isolated from each other:** a UID per strict sandbox
-  ([#27]), `box inspect --security-report` ([#28]), `backend: auto` ([#29]),
+  ([#27], done), `box inspect --security-report` ([#28]), `backend: auto` ([#29]),
   cross-sandbox escape tests ([#30]), a `/data` size limit ([#10]), the nightly
   escape suite running again ([#31]).
 - **v0.6, network policy:** egress allowlists through a forced proxy ([#7]), a
@@ -31,7 +31,8 @@ no dates.
   ([#42]), packages and published SDKs ([#43]), logs and metrics ([#44]), a
   fuller guest kernel for Kubernetes ([#9]).
 - **v1.0, production:** multi-tenant server mode ([#45]), an external security
-  review ([#46]).
+  review ([#46]), a Kata Containers backend for Kubernetes, GPUs and
+  confidential VMs ([#48]).
 
 [ms]: https://github.com/chxperiments/box/milestones
 [#7]: https://github.com/chxperiments/box/issues/7
@@ -59,3 +60,4 @@ no dates.
 [#44]: https://github.com/chxperiments/box/issues/44
 [#45]: https://github.com/chxperiments/box/issues/45
 [#46]: https://github.com/chxperiments/box/issues/46
+[#48]: https://github.com/chxperiments/box/issues/48
