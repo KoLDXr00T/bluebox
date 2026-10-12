@@ -17,7 +17,7 @@ no dates.
 ## Next
 
 - **v0.5, sandboxes isolated from each other:** a UID per strict sandbox
-  ([#27], done), `box inspect --security-report` ([#28], done), `backend: auto` ([#29]),
+  ([#27], done), `box inspect --security-report` ([#28], done), `backend: auto` ([#29], done),
   cross-sandbox escape tests ([#30]), a `/data` size limit ([#10]), the nightly
   escape suite running again ([#31]).
 - **v0.6, network policy:** egress allowlists through a forced proxy ([#7]), a
