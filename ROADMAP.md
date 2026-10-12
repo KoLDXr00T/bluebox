@@ -32,7 +32,8 @@ no dates.
   fuller guest kernel for Kubernetes ([#9]).
 - **v1.0, production:** multi-tenant server mode ([#45]), an external security
   review ([#46]), a Kata Containers backend for Kubernetes, GPUs and
-  confidential VMs ([#48]).
+  confidential VMs ([#48]), box on Kubernetes: an operator, a `Sandbox`
+  resource and a Helm chart ([#49]).
 
 [ms]: https://github.com/chxperiments/box/milestones
 [#7]: https://github.com/chxperiments/box/issues/7
@@ -61,3 +62,4 @@ no dates.
 [#45]: https://github.com/chxperiments/box/issues/45
 [#46]: https://github.com/chxperiments/box/issues/46
 [#48]: https://github.com/chxperiments/box/issues/48
+[#49]: https://github.com/chxperiments/box/issues/49
