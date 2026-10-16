@@ -11,6 +11,8 @@ kernel, defined in one file and started in milliseconds.
 [Security](SECURITY.md) ·
 [Benchmarks](bench/RESULTS.md)
 
+###### Note: The codebase was developed using a vibe-coding approach, but the architecture, solution design, and key technical decisions were conceived and governed by me. The tool remains under development and should not yet be considered production-ready.
+
 ## Install
 
 ```sh
