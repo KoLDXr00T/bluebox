@@ -37,7 +37,8 @@ jobs:
           sudo udevadm trigger --name-match=kvm
           sudo modprobe vhost_vsock
           sudo chmod 666 /dev/vhost-vsock
-          grep -q "^$USER:" /etc/subuid || sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$USER"
+          sudo usermod --add-subuids 262144-4456447 --add-subgids 262144-4456447 "$USER"
+          podman system migrate
           command -v crun || sudo apt-get install -y crun
 
       - name: host
@@ -56,3 +57,16 @@ jobs:
 
       - name: escape tests (firecracker, ${{ matrix.isolation }})
         run: security/escape-test.sh ./box ${{ matrix.isolation }} firecracker
+
+      - name: why up failed
+        if: failure()
+        run: |
+          export BOX_HOME=$RUNNER_TEMP/diag
+          ./box new diag >/dev/null
+          printf 'base: docker.io/library/alpine:latest\ncpus: 1\nram_mib: 512\nnetwork: none\nisolation: ${{ matrix.isolation }}\nbackend: firecracker\ndata_size: 64M\n' \
+            > "$BOX_HOME/sandboxes/diag/Boxfile"
+          ./box build diag 2>&1 | tail -20
+          ./box up diag 2>&1 || true
+          echo "--- box logs"; ./box logs diag 2>&1 | tail -60 || true
+          echo "--- files"; find "$BOX_HOME" -name '*.log' -newer "$BOX_HOME/sandboxes/diag/Boxfile" | while read -r f; do echo "== $f"; tail -40 "$f"; done
+          echo "--- dmesg"; sudo dmesg | tail -20
