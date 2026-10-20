@@ -1,0 +1,74 @@
+name: Escape suite (hosted, experimental)
+
+# An experiment: the escape suite on a GitHub-hosted runner instead of the
+# self-hosted kvm one. Standard Ubuntu runners expose /dev/kvm; this makes
+# it usable and runs the firecracker backend, which needs only KVM, vsock,
+# podman and crun. The podman/krun backends need crun built with libkrun,
+# which stock Ubuntu does not ship, so they are not run here.
+
+on:
+  push:
+    branches: [ci/escape-hosted-fix]
+
+permissions:
+  contents: read
+
+jobs:
+  escape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        isolation: [strict, standard]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: KVM and vsock for this user
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo modprobe vhost_vsock
+          sudo chmod 666 /dev/vhost-vsock
+          sudo usermod --add-subuids 262144-4456447 --add-subgids 262144-4456447 "$USER"
+          podman system migrate
+          command -v crun || sudo apt-get install -y crun
+          # The point of this run: no krun at all, as on a firecracker-only host.
+          if command -v krun; then echo "krun is on PATH; this run must not have it" >&2; exit 1; fi
+
+      - name: host
+        run: |
+          uname -a
+          ls -l /dev/kvm /dev/vhost-vsock
+          grep -E -c 'vmx|svm' /proc/cpuinfo
+          podman --version; crun --version | head -1
+          grep "^$USER:" /etc/subuid /etc/subgid
+
+      - name: build (static, so it can serve as the guest agent)
+        run: CGO_ENABLED=0 go build -o box ./cmd/box
+
+      - name: doctor
+        run: ./box doctor || true # krun is absent by design here
+
+      - name: escape tests (firecracker, ${{ matrix.isolation }})
+        run: security/escape-test.sh ./box ${{ matrix.isolation }} firecracker
+
+      - name: why up failed
+        if: failure()
+        run: |
+          export BOX_HOME=$RUNNER_TEMP/diag
+          ./box new diag >/dev/null
+          printf 'base: docker.io/library/alpine:latest\ncpus: 1\nram_mib: 512\nnetwork: none\nisolation: ${{ matrix.isolation }}\nbackend: firecracker\ndata_size: 64M\n' \
+            > "$BOX_HOME/sandboxes/diag/Boxfile"
+          ./box build diag 2>&1 | tail -20
+          ./box up diag 2>&1 || true
+          echo "--- box logs"; ./box logs diag 2>&1 | tail -60 || true
+          echo "--- files"; find "$BOX_HOME" -name '*.log' -newer "$BOX_HOME/sandboxes/diag/Boxfile" | while read -r f; do echo "== $f"; tail -40 "$f"; done
+          echo "--- dmesg"; sudo dmesg | tail -20
