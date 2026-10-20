@@ -40,6 +40,9 @@ jobs:
           sudo usermod --add-subuids 262144-4456447 --add-subgids 262144-4456447 "$USER"
           podman system migrate
           command -v crun || sudo apt-get install -y crun
+          # Workaround, not a fix: RuntimeIdentity insists on krun on PATH
+          # whatever the backend, so up fails on a firecracker-only host.
+          sudo ln -sf "$(command -v crun)" /usr/local/bin/krun
 
       - name: host
         run: |
