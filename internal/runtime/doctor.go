@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"sort"
 	"strings"
 
 	"box/internal/sandbox"
@@ -132,16 +133,25 @@ func Doctor() []Check {
 		add(Check{Name: "SDK socket", Warn: true, Detail: err.Error()})
 	}
 
-	if t, ok := loadToken(); ok {
-		id, _ := RuntimeIdentity()
-		if id == t.Identity {
-			add(Check{Name: "isolation", OK: true,
+	// Each backend's proof is its own; report every one that has been made.
+	cache := loadCache()
+	proven := make([]string, 0, len(cache.Backends))
+	for b := range cache.Backends {
+		proven = append(proven, b)
+	}
+	sort.Strings(proven)
+	for _, b := range proven {
+		t := cache.Backends[b]
+		name := "isolation (" + b + ")"
+		if id, _ := RuntimeIdentity(b); id == t.Identity {
+			add(Check{Name: name, OK: true,
 				Detail: fmt.Sprintf("verified %s: guest %s, outside %s", t.VerifiedAt, t.Guest, t.Baseline)})
 		} else {
-			add(Check{Name: "isolation", Warn: true,
+			add(Check{Name: name, Warn: true,
 				Detail: "the runtime changed since it was last verified; the next run re-checks it"})
 		}
-	} else {
+	}
+	if len(proven) == 0 {
 		add(Check{Name: "isolation", Warn: true, Detail: "not verified yet",
 			Fix: "box build <name>   proves a sandbox gets its own kernel"})
 	}

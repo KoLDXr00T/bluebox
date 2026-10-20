@@ -114,9 +114,10 @@ func LogPath(name string) (string, error) {
 // someone else's box/<name> image with /data and the rw mounts attached.
 func ImageTag(name string) string { return "localhost/box/" + name + ":latest" }
 
-// VerifyCachePath holds the last successful isolation check, keyed on the
-// runtime's identity. It is not per-sandbox: isolation is a property of the
-// podman + krun toolchain, so one cleared runtime clears it for every sandbox.
+// VerifyCachePath holds the last successful isolation check of each backend,
+// keyed on that backend's runtime identity. It is not per-sandbox: isolation
+// is a property of the toolchain a backend boots guests with, so one cleared
+// runtime clears that backend for every sandbox, and no other backend.
 func VerifyCachePath() (string, error) {
 	h, err := Home()
 	if err != nil {

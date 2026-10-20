@@ -131,7 +131,7 @@ func verify(name string, s boxfile.Spec) error {
 		return err
 	}
 	// Prime the cache so runs on this same runtime skip the double boot.
-	runtime.MarkVerified(guest, baseline)
+	runtime.MarkVerified(s, guest, baseline)
 	fmt.Printf("isolated: sandbox %s, outside %s\n", guest, baseline)
 	return nil
 }

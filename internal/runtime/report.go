@@ -163,7 +163,7 @@ func SecurityReport(name string, s boxfile.Spec) (Report, error) {
 		r.Network.Egress = "none"
 	}
 	r.Filesystem.Data = dataReport(name, s)
-	r.Host = hostReport()
+	r.Host = hostReport(b.Name())
 	r.Live = liveReport(name, b.Name(), r.VMM, r.Network.OwnNamespace)
 	r.Findings = findings(r, s)
 	return r, nil
@@ -371,7 +371,8 @@ func statInto(dr *DataReport, path string) {
 	dr.Mode = fmt.Sprintf("%o", fi.Mode().Perm())
 }
 
-func hostReport() HostReport {
+// hostReport describes the host, and the isolation proof for backend.
+func hostReport(backend string) HostReport {
 	h := HostReport{}
 	if f, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0); err == nil {
 		f.Close()
@@ -380,9 +381,9 @@ func hostReport() HostReport {
 	if b, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
 		h.Kernel = strings.TrimSpace(string(b))
 	}
-	if t, ok := loadToken(); ok {
+	if t, ok := loadToken(backend); ok {
 		h.GuestKernel, h.IsolationVerifiedAt = t.Guest, t.VerifiedAt
-		if id, err := RuntimeIdentity(); err == nil {
+		if id, err := RuntimeIdentity(backend); err == nil {
 			h.IsolationCurrent = t.Identity == id
 		}
 	}
