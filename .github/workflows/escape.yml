@@ -9,7 +9,7 @@ name: Escape suite (firecracker)
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci/escape-hosted-firecracker-test]
   pull_request:
   workflow_dispatch:
   schedule:
