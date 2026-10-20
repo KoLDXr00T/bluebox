@@ -23,7 +23,9 @@ import (
 // ProtocolVersion is the MCP revision this server speaks.
 const ProtocolVersion = "2025-06-18"
 
-// maxText bounds what one tool result hands back to the model.
+// maxText bounds how much of a file read_file shows; past it the middle is
+// elided and can be fetched with the output tool. Files get more room than
+// command output, since the model reads them to edit them.
 const maxText = 64 << 10
 
 type request struct {
@@ -50,8 +52,20 @@ type Server struct {
 	api         http.Handler
 	version     string
 	allowApply  bool
+	budget      int
+	spool       *spool
+	seen        *seen
 	tools       []tool
 	toolsByName map[string]tool
+}
+
+// Options configures a session.
+type Options struct {
+	// AllowApply offers the apply tool.
+	AllowApply bool
+	// OutputBudget is how many bytes of each command stream a result shows
+	// before eliding the middle; 0 means DefaultOutputBudget.
+	OutputBudget int
 }
 
 type tool struct {
@@ -61,11 +75,16 @@ type tool struct {
 	call        func(s *Server, args map[string]any) (string, bool)
 }
 
-// New returns a server answering through api, the local API's handler.
-func New(api http.Handler, version string, allowApply bool) *Server {
-	s := &Server{api: api, version: version, allowApply: allowApply, toolsByName: map[string]tool{}}
+// New returns a server answering through api: the local API's handler, or a
+// router in front of several hosts' APIs.
+func New(api http.Handler, version string, opt Options) *Server {
+	if opt.OutputBudget <= 0 {
+		opt.OutputBudget = DefaultOutputBudget
+	}
+	s := &Server{api: api, version: version, allowApply: opt.AllowApply, budget: opt.OutputBudget,
+		spool: newSpool(), seen: newSeen(), toolsByName: map[string]tool{}}
 	for _, t := range allTools() {
-		if t.Name == "apply" && !allowApply {
+		if t.Name == "apply" && !opt.AllowApply {
 			continue
 		}
 		s.tools = append(s.tools, t)
@@ -111,7 +130,10 @@ func (s *Server) handle(req request) (any, *rpcError) {
 			"instructions": "box runs commands in disposable microVM sandboxes, each with its own kernel. " +
 				"Sandboxes are created and built by a human with the box CLI; list them with list_sandboxes. " +
 				"`run` uses a fresh VM per command; `up` then `exec` keeps one VM and its state between commands. " +
-				"To try changes safely, `fork` a sandbox and work in the fork; a human reviews `diff` and applies it.",
+				"To try changes safely, `fork` a sandbox and work in the fork; a human reviews `diff` and applies it. " +
+				"A sandbox on another host is named host/name. " +
+				"Long command output is shown by its first and last lines; fetch the rest with `output`. " +
+				"A read whose result you already hold says `unchanged`; pass full: true to see it again.",
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -143,7 +165,7 @@ func (s *Server) handle(req request) (any, *rpcError) {
 
 // call makes one request to the API in-process and decodes its JSON.
 func (s *Server) call(method, path string, body any) (map[string]any, []any, error) {
-	var rd io.Reader
+	var rd io.Reader = http.NoBody // as a real server hands a handler: never nil
 	if body != nil {
 		b, _ := json.Marshal(body)
 		rd = bytes.NewReader(b)
@@ -191,31 +213,33 @@ func num(args map[string]any, k string) int {
 	return 0
 }
 
-func clip(b []byte) string {
-	if len(b) > maxText {
-		return string(b[:maxText]) + fmt.Sprintf("\n[... %d more bytes not shown]", len(b)-maxText)
-	}
-	return string(b)
+func flag(args map[string]any, k string) bool {
+	v, _ := args[k].(bool)
+	return v
 }
 
-// commandResult renders an exec/run response for the model. A non-zero exit
-// is a result, not a tool failure, so it is not marked as an error.
-func commandResult(r map[string]any) string {
-	dec := func(k string) []byte {
-		s, _ := r[k].(string)
-		b, _ := base64.StdEncoding.DecodeString(s)
-		return b
-	}
+func b64(r map[string]any, k string) []byte {
+	s, _ := r[k].(string)
+	b, _ := base64.StdEncoding.DecodeString(s)
+	return b
+}
+
+// commandResult renders an exec/run response for the model: escapes and
+// progress redraws removed, repeats collapsed, each stream cut to the budget
+// with its full text kept for the output tool. A non-zero exit is a result,
+// not a tool failure, so it is not marked as an error.
+func (s *Server) commandResult(r map[string]any) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "exit code %v in %v ms", r["exit_code"], r["duration_ms"])
 	if t, _ := r["timed_out"].(bool); t {
 		b.WriteString(" (timed out)")
 	}
-	if out := dec("stdout"); len(out) > 0 {
-		b.WriteString("\n\nstdout:\n" + clip(out))
+	if t, _ := r["truncated"].(bool); t {
+		b.WriteString(" (output over the server's limit was dropped)")
 	}
-	if errb := dec("stderr"); len(errb) > 0 {
-		b.WriteString("\n\nstderr:\n" + clip(errb))
+	raw := map[string][]byte{"stdout": b64(r, "stdout"), "stderr": b64(r, "stderr")}
+	for _, sec := range s.render([]string{"stdout", "stderr"}, raw, true, s.budget) {
+		b.WriteString("\n\n" + sec.name + ":\n" + sec.text)
 	}
 	return b.String()
 }
@@ -225,7 +249,8 @@ func schema(props map[string]any, required ...string) map[string]any {
 }
 
 var (
-	pSandbox = map[string]any{"type": "string", "description": "sandbox name, from list_sandboxes"}
+	pSandbox = map[string]any{"type": "string", "description": "sandbox name from list_sandboxes (host/name for another host)"}
+	pFull    = map[string]any{"type": "boolean", "description": "show the content even if you already saw it unchanged"}
 	pCommand = map[string]any{"type": "string", "description": "a shell command line, run with sh -c"}
 	pTimeout = map[string]any{"type": "integer", "description": "seconds; the command exits 124 when it is hit"}
 )
@@ -244,7 +269,7 @@ func allTools() []tool {
 			if err != nil {
 				return err.Error(), true
 			}
-			return commandResult(r), false
+			return s.commandResult(r), false
 		}
 	}
 	simple := func(method, verb, done string) func(*Server, map[string]any) (string, bool) {
@@ -262,15 +287,23 @@ func allTools() []tool {
 	return []tool{
 		{
 			Name:        "list_sandboxes",
-			Description: "List the sandboxes you can use, whether each is up, and its warm pool.",
-			InputSchema: schema(map[string]any{}),
-			call: func(s *Server, _ map[string]any) (string, bool) {
+			Description: "List the sandboxes you can use, on every host, whether each is up, and its warm pool.",
+			InputSchema: schema(map[string]any{"full": pFull}),
+			call: func(s *Server, a map[string]any) (string, bool) {
 				_, arr, err := s.call("GET", "/v1/sandboxes", nil)
 				if err != nil {
 					return err.Error(), true
 				}
-				b, _ := json.MarshalIndent(arr, "", "  ")
-				return string(b), false
+				text := listText(arr)
+				// A router also reports hosts it could not reach; a single
+				// host's API has no such route, and the error is ignored.
+				if _, hosts, err := s.call("GET", "/v1/hosts", nil); err == nil {
+					text += hostsText(hosts)
+				}
+				if s.seen.check(listKey, []byte(text), flag(a, "full")) {
+					return unchangedNote("the sandbox list", len(text)), false
+				}
+				return text, false
 			},
 		},
 		{
@@ -316,8 +349,9 @@ func allTools() []tool {
 					return err.Error(), true
 				}
 				if code, _ := r["exit_code"].(float64); code != 0 {
-					return commandResult(r), true
+					return s.commandResult(r), true
 				}
+				s.seen.know(fileKey(str(a, "sandbox"), str(a, "path")), []byte(str(a, "content")))
 				return "written " + str(a, "path"), false
 			},
 		},
@@ -325,7 +359,8 @@ func allTools() []tool {
 			Name:        "read_file",
 			Description: "Read a file from inside a running sandbox (see up).",
 			InputSchema: schema(map[string]any{"sandbox": pSandbox,
-				"path": map[string]any{"type": "string", "description": "absolute path in the guest"}}, "sandbox", "path"),
+				"path": map[string]any{"type": "string", "description": "absolute path in the guest"},
+				"full": pFull}, "sandbox", "path"),
 			call: func(s *Server, a map[string]any) (string, bool) {
 				r, _, err := s.call("POST", "/v1/sandboxes/"+str(a, "sandbox")+"/exec",
 					map[string]any{"argv": []string{"cat", "--", str(a, "path")}})
@@ -333,10 +368,17 @@ func allTools() []tool {
 					return err.Error(), true
 				}
 				if code, _ := r["exit_code"].(float64); code != 0 {
-					return commandResult(r), true
+					return s.commandResult(r), true
 				}
-				out, _ := base64.StdEncoding.DecodeString(r["stdout"].(string))
-				return clip(out), false
+				out := b64(r, "stdout")
+				if s.seen.check(fileKey(str(a, "sandbox"), str(a, "path")), out, flag(a, "full")) {
+					return unchangedNote(str(a, "path"), len(out)), false
+				}
+				secs := s.render([]string{"content"}, map[string][]byte{"content": out}, false, maxText)
+				if len(secs) == 0 {
+					return "(empty file)", false
+				}
+				return secs[0].text, false
 			},
 		},
 		{
@@ -346,17 +388,22 @@ func allTools() []tool {
 			InputSchema: schema(map[string]any{"sandbox": pSandbox,
 				"name": map[string]any{"type": "string", "description": "name for the fork"}}, "sandbox", "name"),
 			call: func(s *Server, a map[string]any) (string, bool) {
-				_, _, err := s.call("POST", "/v1/sandboxes/"+str(a, "sandbox")+"/fork", map[string]any{"as": str(a, "name")})
+				r, _, err := s.call("POST", "/v1/sandboxes/"+str(a, "sandbox")+"/fork", map[string]any{"as": str(a, "name")})
 				if err != nil {
 					return err.Error(), true
 				}
-				return "forked " + str(a, "sandbox") + " to " + str(a, "name"), false
+				// A router names a fork on another host host/name.
+				fork, _ := r["fork"].(string)
+				if fork == "" {
+					fork = str(a, "name")
+				}
+				return "forked " + str(a, "sandbox") + " to " + fork, false
 			},
 		},
 		{
 			Name:        "diff",
 			Description: "List a fork's changes to /data: A added, M modified, D deleted.",
-			InputSchema: schema(map[string]any{"sandbox": map[string]any{"type": "string", "description": "the fork"}}, "sandbox"),
+			InputSchema: schema(map[string]any{"sandbox": map[string]any{"type": "string", "description": "the fork"}, "full": pFull}, "sandbox"),
 			call: func(s *Server, a map[string]any) (string, bool) {
 				r, _, err := s.call("GET", "/v1/sandboxes/"+str(a, "sandbox")+"/diff", nil)
 				if err != nil {
@@ -371,7 +418,11 @@ func allTools() []tool {
 					m, _ := c.(map[string]any)
 					fmt.Fprintf(&b, "%v %v\n", m["kind"], m["path"])
 				}
-				return b.String(), false
+				if s.seen.check(diffKey(str(a, "sandbox")), []byte(b.String()), flag(a, "full")) {
+					return unchangedNote("the diff of "+str(a, "sandbox"), b.Len()), false
+				}
+				secs := s.render([]string{"changes"}, map[string][]byte{"changes": []byte(b.String())}, false, maxText)
+				return secs[0].text, false
 			},
 		},
 		{
@@ -381,10 +432,59 @@ func allTools() []tool {
 			call:        simple("POST", "discard", "discarded"),
 		},
 		{
+			Name: "output",
+			Description: "Show part of a command output or file that an earlier result elided, by its id: " +
+				"a range of lines, or the lines matching a regular expression. Lines are numbered.",
+			InputSchema: schema(map[string]any{
+				"id":        map[string]any{"type": "string", "description": "the id from the elision marker, e.g. o3"},
+				"stream":    map[string]any{"type": "string", "description": "stdout, stderr, content or changes, as the marker says; default stdout"},
+				"from_line": map[string]any{"type": "integer", "description": "first line, 1-based"},
+				"to_line":   map[string]any{"type": "integer", "description": "last line, inclusive"},
+				"grep":      map[string]any{"type": "string", "description": "only lines matching this regular expression (RE2)"},
+			}, "id"),
+			call: func(s *Server, a map[string]any) (string, bool) { return s.output(a) },
+		},
+		{
 			Name:        "apply",
 			Description: "Merge a fork's changes into its parent's /data. Refused while either is up.",
 			InputSchema: schema(map[string]any{"sandbox": map[string]any{"type": "string", "description": "the fork"}}, "sandbox"),
 			call:        simple("POST", "apply", "applied"),
 		},
 	}
+}
+
+// listText renders the sandbox list one line per sandbox: the same facts as
+// the API's JSON at a fraction of the tokens.
+func listText(arr []any) string {
+	if len(arr) == 0 {
+		return "no sandboxes; a human creates them with: box new <name>"
+	}
+	var b strings.Builder
+	for _, it := range arr {
+		m, _ := it.(map[string]any)
+		if e, _ := m["error"].(string); e != "" {
+			fmt.Fprintf(&b, "%v: error: %s\n", m["name"], e)
+			continue
+		}
+		state := "down"
+		if up, _ := m["up"].(bool); up {
+			state = "up"
+		}
+		fmt.Fprintf(&b, "%v: %s, warm %v/%v, network %v, base %v\n",
+			m["name"], state, m["warm"], m["warm_target"], m["network"], m["base"])
+	}
+	return b.String()
+}
+
+// hostsText names the hosts a router could not reach, whose sandboxes are
+// missing from the list.
+func hostsText(arr []any) string {
+	var b strings.Builder
+	for _, it := range arr {
+		m, _ := it.(map[string]any)
+		if e, _ := m["error"].(string); e != "" {
+			fmt.Fprintf(&b, "host %v unreachable, its sandboxes are not listed: %s\n", m["name"], e)
+		}
+	}
+	return b.String()
 }

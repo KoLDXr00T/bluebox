@@ -124,6 +124,22 @@ agent or another sandbox's. The SDK server listens on a Unix socket created
 owner-only (`umask` before `listen`), and is never placed in a shared
 directory.
 
+## Remote hosts (`hosts.yaml`)
+
+`box mcp` can front other machines listed in `~/.box/hosts.yaml`. It reaches
+each one only over ssh: it runs `box __ensure-serve` there, which starts
+that host's own `box serve` on its owner-only socket, and forwards that socket
+to one in a `0700` directory here. box opens no network listener for this.
+ssh is the boundary: whoever can log in to the host can run commands in its
+sandboxes, as whoever can open the socket can locally. ssh runs in batch
+mode and checks host keys as your ssh config says; box never relaxes that.
+
+The host list is checked before ssh sees it: a destination must be
+`user@host` or a config alias, never something ssh would read as an option,
+and the remote binary path may hold no character a shell gives meaning to.
+An agent connected to `box mcp` can use every sandbox on every listed host,
+and `--allow-apply` lets it apply forks on all of them.
+
 ## Host-side handling of guest-written files
 
 A guest can write anything into `/data`: symlinks to `/etc/passwd`, `..`

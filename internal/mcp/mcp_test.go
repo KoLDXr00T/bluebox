@@ -28,7 +28,7 @@ func fakeAPI() http.Handler {
 func session(t *testing.T, allowApply bool, lines ...string) []map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := New(fakeAPI(), "test", allowApply).Serve(strings.NewReader(strings.Join(lines, "\n")), &out); err != nil {
+	if err := New(fakeAPI(), "test", Options{AllowApply: allowApply}).Serve(strings.NewReader(strings.Join(lines, "\n")), &out); err != nil {
 		t.Fatal(err)
 	}
 	var res []map[string]any

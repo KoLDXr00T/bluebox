@@ -61,7 +61,17 @@ box apply try-a          # or: box discard try-a
 
 - **SDKs:** [Python](sdk/python/), [TypeScript](sdk/typescript/), [Go](sdk/go/), [Rust](sdk/rust/)
 - **MCP:** `claude mcp add box -- box mcp`. Agents can fork but not
-  apply, unless you start it with `--allow-apply`.
+  apply, unless you start it with `--allow-apply`. Long output is shown by
+  its first and last lines, with the rest one `output` call away, and a
+  re-read of something unchanged costs one line, not the content.
+- **Other machines:** list them in `~/.box/hosts.yaml` and `box mcp` fronts
+  them too, over ssh; a sandbox there is `host/name`. `box hosts` shows them.
+
+```yaml
+hosts:
+  - name: gpu1
+    ssh: me@gpu1.example.com
+```
 
 ```python
 from sdbox import Sandbox
