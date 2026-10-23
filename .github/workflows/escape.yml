@@ -1,0 +1,64 @@
+name: Escape suite (firecracker)
+
+# The escape suite for the firecracker backend, on GitHub-hosted runners: they
+# expose /dev/kvm, and firecracker needs nothing beyond KVM, vsock, podman and
+# crun. It takes about a minute, so it runs on every change, not only nightly.
+#
+# The podman and krun backends need crun built with libkrun, which stock Ubuntu
+# does not ship; security.yml still runs them on the self-hosted kvm runner.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  escape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        isolation: [strict, standard]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: KVM, vsock and subordinate UIDs for the runner user
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo modprobe vhost_vsock
+          sudo chmod 666 /dev/vhost-vsock
+          # Room for strict mode's UID per sandbox (box doctor's suggestion).
+          sudo usermod --add-subuids 262144-4456447 --add-subgids 262144-4456447 "$USER"
+          podman system migrate
+          command -v crun || sudo apt-get install -y crun
+          # Until #56 lands, box up wants krun on PATH whatever the backend.
+          # Remove this then, so the job is a firecracker-only host.
+          sudo ln -sf "$(command -v crun)" /usr/local/bin/krun
+
+      - name: host
+        run: |
+          uname -r
+          ls -l /dev/kvm /dev/vhost-vsock
+          podman --version
+          crun --version | head -1
+
+      - name: build (static, so it can serve as the guest agent)
+        run: CGO_ENABLED=0 go build -o box ./cmd/box
+
+      - name: escape tests (firecracker, ${{ matrix.isolation }})
+        run: security/escape-test.sh ./box ${{ matrix.isolation }} firecracker

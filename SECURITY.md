@@ -170,9 +170,12 @@ a sandbox, and checks the VMM's confinement from outside:
 security/escape-test.sh "$(command -v box)" strict
 ```
 
-It needs KVM, so it does not run in the hosted CI. `.github/workflows/
-security.yml` runs it on a self-hosted runner labelled `kvm`, and before every
-release it is run by hand on a Linux host.
+It needs KVM. `.github/workflows/escape.yml` runs it for the firecracker
+backend, under both isolation modes, on every change, on GitHub's hosted
+runners, which expose KVM. The podman and krun backends need crun built with
+libkrun, which those runners lack: `.github/workflows/security.yml` runs them
+nightly on a self-hosted runner labelled `kvm`, and before every release the
+suite is run by hand on a Linux host.
 
 ## Reporting
 

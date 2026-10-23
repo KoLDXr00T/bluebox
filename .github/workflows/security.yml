@@ -1,7 +1,8 @@
 name: Security
 
-# The escape tests boot real microVMs, which needs KVM and libkrun: neither
-# exists on the hosted runners. This runs on a self-hosted Linux runner
+# The escape tests boot real microVMs. For the podman and krun backends that
+# needs libkrun, which the hosted runners lack (escape.yml runs firecracker
+# there, on every change). This runs on a self-hosted Linux runner
 # labelled `kvm` (Fedora with podman, crun +LIBKRUN and the krun symlink), on
 # demand and nightly, and fails if any escape succeeds under either
 # isolation mode.
