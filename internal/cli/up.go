@@ -186,23 +186,39 @@ func doctorCmd() *cobra.Command {
 }
 
 func mcpCmd() *cobra.Command {
-	var allowApply bool
+	var allowApply, localOnly bool
+	var hostsFile string
+	var budget int
 	c := &cobra.Command{
 		Use: "mcp", Short: "MCP server for AI agents (stdio)", GroupID: groupRun,
 		Long: "Serves box over the Model Context Protocol on stdin and stdout,\n" +
 			"for Claude Code, Claude Desktop, Cursor and other MCP clients. Tools:\n" +
 			"list_sandboxes, run, up, exec, down, read_file, write_file, fork,\n" +
-			"diff, discard. Sandboxes themselves are created and built with the CLI.\n\n" +
+			"diff, discard, output. Sandboxes themselves are created and built\n" +
+			"with the CLI.\n\n" +
+			"With hosts in ~/.box/hosts.yaml (see box hosts), it fronts those too:\n" +
+			"a sandbox on another host is host/name.\n\n" +
+			"Long command output is shown by its first and last lines, the rest\n" +
+			"kept for the output tool, and a read whose result the agent already\n" +
+			"has answers \"unchanged\": both save the agent's context.\n\n" +
 			"apply is not offered unless --allow-apply is given: forks exist so a\n" +
 			"human reviews an agent's work before it reaches real data.\n\n" +
 			"  claude mcp add box -- box mcp",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: completeNothing,
 		RunE: func(*cobra.Command, []string) error {
-			return mcp.New(server.NewHandler(Version), Version, allowApply).Serve(os.Stdin, os.Stdout)
+			api, closeAll, err := apiFor(hostsFile, localOnly)
+			if err != nil {
+				return err
+			}
+			defer closeAll()
+			return mcp.New(api, Version, mcp.Options{AllowApply: allowApply, OutputBudget: budget}).Serve(os.Stdin, os.Stdout)
 		},
 	}
 	c.Flags().BoolVar(&allowApply, "allow-apply", false, "also let the agent apply forks to their parents")
+	c.Flags().StringVar(&hostsFile, "hosts", "", "host list (default ~/.box/hosts.yaml)")
+	c.Flags().BoolVar(&localOnly, "local-only", false, "ignore the host list")
+	c.Flags().IntVar(&budget, "output-budget", mcp.DefaultOutputBudget, "bytes of each command stream shown before the middle is elided")
 	return c
 }
 
