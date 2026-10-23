@@ -15,7 +15,10 @@ Two layers, checked separately.
 kernel. A guest kernel exploit takes over the guest, which is thrown away.
 `box build` proves a sandbox got its own kernel by comparing it with the
 kernel a plain container sees, and every `run`, `exec` and `up` re-checks that
-the runtime is still the one that passed.
+the runtime is still the one that passed. Each backend is proven on its own,
+against a fingerprint of only what it runs (krun and crun for podman and krun;
+the pinned Firecracker build and crun for firecracker), so a check passed on
+one backend never clears another.
 
 **The VMM's confinement.** libkrun's own documentation states that the guest
 and its VMM "pertain to the same security context": the VMM is a host process
