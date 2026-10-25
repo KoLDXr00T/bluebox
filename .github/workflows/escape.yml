@@ -9,7 +9,7 @@ name: Escape suite (firecracker)
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci/go-1.26.10-drop-krun-symlink-test]
   pull_request:
   workflow_dispatch:
   schedule:
